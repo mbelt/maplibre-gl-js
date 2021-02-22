@@ -1335,7 +1335,7 @@ class Map extends Camera {
      *
      * @see [Change a map's style](https://www.mapbox.com/mapbox-gl-js/example/setstyle/)
      */
-    setStyle(style: StyleSpecification | string | null, options?: {diff?: boolean} & StyleOptions) {
+    setStyle(style: StyleSpecification | string | null, options?: {diff?: boolean, preserveLayers?: string[], preserveSources?: string[] } & StyleOptions) {
         options = extend({}, {localIdeographFontFamily: this._localIdeographFontFamily}, options);
 
         if ((options.diff !== false && options.localIdeographFontFamily === this._localIdeographFontFamily) && this.style && style) {
@@ -1356,8 +1356,9 @@ class Map extends Camera {
         return str;
     }
 
-    _updateStyle(style: StyleSpecification | string | null,  options?: {diff?: boolean} & StyleOptions) {
+    _updateStyle(style: StyleSpecification | string | null,  options?: {diff?: boolean, preserveLayers?: [], preserveSources?: [] } & StyleOptions) {
         if (this.style) {
+            options.previousStyle = this.style.serialize();
             this.style.setEventedParent(null);
             this.style._remove();
         }
@@ -1372,9 +1373,9 @@ class Map extends Camera {
         this.style.setEventedParent(this, {style: this.style});
 
         if (typeof style === 'string') {
-            this.style.loadURL(style);
+            this.style.loadURL(style, options);
         } else {
-            this.style.loadJSON(style);
+            this.style.loadJSON(style, options);
         }
 
         return this;
