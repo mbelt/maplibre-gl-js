@@ -34,7 +34,7 @@ import type {PointLike} from '@mapbox/point-geometry';
 import type {RequestTransformFunction} from '../util/mapbox';
 import type {LngLatLike} from '../geo/lng_lat';
 import type {LngLatBoundsLike} from '../geo/lng_lat_bounds';
-import type {StyleOptions, StyleSetterOptions} from '../style/style';
+import type {StyleOptions, StyleSwapOptions, StyleSetterOptions} from '../style/style';
 import type {MapEvent, MapDataEvent} from './events';
 import type {CustomLayerInterface} from '../style/style_layer/custom_style_layer';
 import type {StyleImageInterface, StyleImageMetadata} from '../style/style_image';
@@ -1335,7 +1335,8 @@ class Map extends Camera {
      *
      * @see [Change a map's style](https://www.mapbox.com/mapbox-gl-js/example/setstyle/)
      */
-    setStyle(style: StyleSpecification | string | null, options?: {diff?: boolean, preserveLayers?: string[], preserveSources?: string[] } & StyleOptions) {
+    setStyle(style: StyleSpecification | string | null, 
+        options?: StyleSwapOptions | StyleOptions) {
         options = extend({}, {localIdeographFontFamily: this._localIdeographFontFamily}, options);
 
         if ((options.diff !== false && options.localIdeographFontFamily === this._localIdeographFontFamily) && this.style && style) {
@@ -1356,7 +1357,7 @@ class Map extends Camera {
         return str;
     }
 
-    _updateStyle(style: StyleSpecification | string | null,  options?: {diff?: boolean, preserveLayers?: [], preserveSources?: [] } & StyleOptions) {
+    _updateStyle(style: StyleSpecification | string | null,  options?: StyleSwapOptions | StyleOptions) {
         if (this.style) {
             options.previousStyle = this.style.serialize();
             this.style.setEventedParent(null);
@@ -1389,7 +1390,8 @@ class Map extends Camera {
         }
     }
 
-    _diffStyle(style: StyleSpecification | string,  options?: {diff?: boolean} & StyleOptions) {
+    _diffStyle(style: StyleSpecification | string,
+        options?:  StyleSwapOptions | StyleOptions = {}) {
         if (typeof style === 'string') {
             const url = this._requestManager.normalizeStyleURL(style);
             const request = this._requestManager.transformRequest(url, ResourceType.Style);
@@ -1405,9 +1407,9 @@ class Map extends Camera {
         }
     }
 
-    _updateDiff(style: StyleSpecification,  options?: {diff?: boolean} & StyleOptions) {
+    _updateDiff(style: StyleSpecification, options?: StyleSwapOptions | StyleOptions = {}) {
         try {
-            if (this.style.setState(style)) {
+            if (this.style.setState(style, options)) {
                 this._update(true);
             }
         } catch (e) {

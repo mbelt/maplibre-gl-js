@@ -99,6 +99,13 @@ export type StyleOptions = {
 export type StyleSetterOptions = {
     validate?: boolean
 };
+
+export type StyleSwapOptions = {
+    diff?: boolean,
+    preserveLayers?: string[],
+    preserveSources?: string[],
+    layerOrdering?: (nextLayerIds: string[], toInsert: string[]) => void
+}
 /**
  * @private
  */
@@ -206,13 +213,7 @@ class Style extends Evented {
         });
     }
 
-    loadURL(url: string, options: {
-        validate?: boolean,
-        accessToken?: string,
-        previousStyle?: StyleSpecification,
-        preserveLayers?: string[],
-        preserveSources?: string[]
-    } = {}) {
+    loadURL(url: string, options: StyleSwapOptions | StyleSetterOptions = {}) {
         this.fire(new Event('dataloading', { dataType: 'style' }));
 
         const validate = typeof options.validate === 'boolean' ?
@@ -230,11 +231,7 @@ class Style extends Evented {
         });
     }
 
-    loadJSON(json: StyleSpecification, options: StyleSetterOptions | {
-        previousStyle?: StyleSpecification,
-        preserveLayers: string[],
-        preserveSources: string[]
-    } = {}) {
+    loadJSON(json: StyleSpecification, options: StyleSetterOptions | StyleSwapOptions = {}) {
         this.fire(new Event('dataloading', { dataType: 'style' }));
 
         this._request = browser.frame(() => {
@@ -498,17 +495,19 @@ class Style extends Evented {
      * @returns {boolean} true if any changes were made; false otherwise
      * @private
      */
-    setState(nextState: StyleSpecification, options: {
-        previousState?: StyleSpecification,
-        preserveLayers?: string[],
-        preserveSources?: string[]
-    } = {}) {
+    setState(nextState: StyleSpecification,
+        options: StyleSwapOptions = {}) {
         this._checkLoaded();
 
         if (emitValidationErrors(this, validateStyle(nextState))) return false;
 
         if (typeof (options.previousState) != "undefined" && Array.isArray(options.preserveLayers) && options.preserveLayers.length > 0) {
-            nextState = this._copyLayersAndSourcesFromBaseToNextStyle(options.previousState, options.preserveSources, options.preserveLayers, nextState);
+            nextState = this._copyLayersAndSourcesFromBaseToNextStyle(
+                options.previousState,
+                options.preserveSources,
+                options.preserveLayers,
+                options.layerOrdering,
+                nextState);
         }
 
         nextState = clone(nextState);
@@ -1033,47 +1032,106 @@ class Style extends Evented {
         }, (value) => { return value !== undefined; });
     }
 
-    _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification, preservedSourcesIds: String[], preservedLayerIds: String[], next: StyleSpecification) {
+    // TODO Simplify signature by using StyleDiffOptions here.
+    _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification,
+        preservedSourcesIds: String[],
+        preservedLayerIds: String[],
+        layerOrdering: (nextLayerIds: string[], toInsert: string[]) => void,
+        next: StyleSpecification) {
         // Ignore sources and layers that don't exist in the base
+        // TODO: Better names of these local variables.
         let sources = Object.keys(base.sources).filter((sourceId) => { return preservedSourcesIds.includes(sourceId); }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
         let layers = base.layers.filter((layer) => { return preservedLayerIds.includes(layer.id); })
         // Don't merge sources->next if base has a source with the same id.
         sources = Object.keys(sources).filter((sourceId) => { return !next.sources.hasOwnProperty(sourceId); }).reduce((obj, key) => { obj[key] = sources[key]; return obj; }, {});
         // Ignore layers that reference sources not in sources or next.sources.
         layers = layers.filter((layer) => next.sources.hasOwnProperty(layer.source) || sources.hasOwnProperty(layer.source));
-        // Don't merge layers->next if next has a layer with the same id.
-        let nextLayerIds = next.layers.reduce((ids, layer) => { ids.push(layer.name); return ids; }, []);
-        layers = layers.filter((layer) => !nextLayerIds.includes(layer.id));
+
+        let baseLayerMap = new Map(base.layers.map(layer, index => [layer.id, [layer, index]]));
+        let nextLayerMap = new Map(next.layers.map(layer, index => [layer.id, [layer, index]]));
+        let preservedLayerMap = new Map(layers.map(layer => [layer.id, layer]));
+        let baseLayerIds = baseLayerMap.keys();
+        let nextLayerIds = nextLayerMap.keys();
+        let preservedLayerIds = preservedLayerMap.keys();
+
+        if (typeof(layerOrdering) !== undefined) {
+            // Call user provided delegate. User is responsible for splicing preservedLayerIds into nextLayerIds.
+            layerOrdering(nextLayerIds, preservedLayerIds);
+            // TODO: Do some checks to make sure user didn't insert invalid layerIds into nextLayerIds. 
+
+            // If preservedLayers and nextLayers contain the same layerId, use preservedLayer.
+            next.layers = nextLayerIds.map(key => preservedLayerMap.has(key) ? preservedLayerMap.get(key)[0] : nextLayerMap.get(key)[0]);
+        } else if (preservedLayerIds.length() > 0) {
+            if (baseLayerIds.keys().filter(k => unorderedNextLayerIds.hasOwnProperty(k)).length() == 0) {
+                // Shortcut for worst-case path where base and next are disjoint.
+                var unorderedNextLayerIds = nextLayerIds.reduce((map, obj) => {map[obj] = obj; return map;}, {});
+                next.layers.push(layers);
+            } else {
+                // Splice preservedLayers into nextLayers
+                //   Rules:
+                //     * Splice each preserved layer directly above the layer in next with the same ID as the uppermost layer in the set of layers from base intersecting
+                //       the layers from next that are below the preserved layer in the base order.
+                //     * If no layerIds below the preserved layer exist in next, splice directly below lowermost layer in the set of layers from base intersecting
+                //       the layers from next that are above the preserved layer in the base order.
+                //     * If next has no layersIds in common with base, all preservedLayers are added on top of next.
+                //     * If preservedLayer and nextlayer IDs conflict, use preservedLayer.
+                let commonLayerIdsInBaseOrder = baseLayerIds.reduce((map, b) => {
+                    let n = nextLayerMap.get(b);
+                    if (n !== undefined) {
+                        map.set(b, n);
+                    }
+                    return map;
+                }, new Map());
+                let below = new Map();
+                let above = new Map()
+                let pivotIterator = commonLayerIdsInBaseOrder.entries();
+                let pivot = pivotIterator.next();
+                let lastPivot = null;
+
+                baseLayerIds.forEach((baseLayerId) => {
+                    if (baseLayerId == preservedLayerIds[0]) {
+                        // Place this layer into next
+                        if (baseLayerId == pivot[0]) {
+                            // Next already has this layer ID, override it.
+                            nextLayerMap.set(baseLayerId, preservedLayerMap.get(baseLayerId));
+                        } else if (pivot == commonLayerIdsInBaseOrder[0]) {
+                            // Nothing below this layer in base exists in next.
+                            // Insert preserved layer below pivot
+                            below.set(pivot[1][1], preservedLayerMap.get(baseLayerId)[0]);
+                        } else {
+                            // Insert preserved layer above last pivot
+                            above.set(lastPivot[1][1], preservedLayerMap.get(baseLayerId)[0]);
+                        }
+                    }
+
+                    if (baseLayerId == pivot[0]) {
+                        lastPivot = pivot;
+                        pivot = pivotIterator.next();
+                    }
+                });
+
+                let belowIt = below.entries();
+                let b = below.next();
+                let aboveIt = above.entries();
+                let a = above.next();
+                next.layers = [];
+
+                nextLayerMap.values().forEach((nextLayer) => {
+                    while (b[0] == nextLayer[0]) {
+                        next.layers.push(b[1]);
+                        b = below.next();
+                    }
+                    next.layers.push(nextLayer[1]);
+                    while (a[0] == nextLayer[0]) {
+                        next.layers.push(a[1]);
+                        a = after.next();
+                    }
+                });
+            }
+        }
 
         // Add sources to next
         Object.assign(next.sources, next.sources, sources);
-
-        // In order, add layers to next. Assume that layerIds that exist in base and next are the same when considering where to insert layers into next.
-        let baseLayerIds = base.layers.reduce((ids, layer) => { ids.push(layer.id); return ids; }, []);
-        layers.forEach((layer) => {
-            let baseLayerIndex = baseLayerIds.indexOf(layer.id);
-            if (baseLayerIndex <= 0) {
-                // This was the bottom-most layer in the base state.
-                next.layers.unshift(layer);
-                nextLayerIds.unshift(layer.id);
-            }
-            else {
-                let belowLayerId = base.layers[baseLayerIndex - 1].id;
-                let belowLayerIndex = nextLayerIds.indexOf(belowLayerId);
-
-                if (belowLayerIndex < 0) {
-                    // Next does not have layer matching belowLayerId from base.
-                    // Put it on the top
-                    next.layers.push(layer);
-                    nextLayerIds.push(layer.id);
-                } else {
-                    // Next has a layer matching belowLayerId from base
-                    // Splice new layer below matching layer in next
-                    next.layers.splice(belowLayerIndex + 1, 0, layer);
-                    nextLayerIds.splice(belowLayerIndex + 1, 0, layer.id);
-                }
-            }
-        });
 
         return next;
     }
