@@ -245,13 +245,13 @@ class Style extends Evented {
         this._load(empty, false);
     }
 
-    _load(json: StyleSpecification, validate: boolean, prevJson?: StyleSpecification, preserveLayers?: [], preserveSources?: []) {
+    _load(json: StyleSpecification, validate: boolean, prevJson?: StyleSpecification, preserveLayers?: [], preserveSources?: [], layerOrdering?: (nextLayerIds: string[]) => void) {
         if (validate && emitValidationErrors(this, validateStyle(json))) {
             return;
         }
 
         if (typeof (prevJson) != "undefined" && Array.isArray(preserveLayers) && preserveLayers.length > 0) {
-            json = this._copyLayersAndSourcesFromBaseToNextStyle(prevJson, preserveSources, preserveLayers, json);
+            json = this._copyLayersAndSourcesFromBaseToNextStyle(prevJson, preserveSources, preserveLayers, layerOrdering, json);
         }
 
         this._loaded = true;
@@ -1047,24 +1047,29 @@ class Style extends Evented {
         // Ignore layers that reference sources not in sources or next.sources.
         layers = layers.filter((layer) => next.sources.hasOwnProperty(layer.source) || sources.hasOwnProperty(layer.source));
 
-        let baseLayerMap = new Map(base.layers.map(layer, index => [layer.id, [layer, index]]));
-        let nextLayerMap = new Map(next.layers.map(layer, index => [layer.id, [layer, index]]));
+        let baseLayerMap = new Map(base.layers.map(layer => { return [layer.id, layer]; }));
+        let nextLayerMap = new Map(next.layers.map(layer => { return [layer.id, layer]; }));
         let preservedLayerMap = new Map(layers.map(layer => [layer.id, layer]));
-        let baseLayerIds = baseLayerMap.keys();
-        let nextLayerIds = nextLayerMap.keys();
-        let preservedLayerIds = preservedLayerMap.keys();
+        let baseLayerIds = Array.from(baseLayerMap.keys());
+        let nextLayerIds = Array.from(nextLayerMap.keys());
+        preservedLayerIds = Array.from(preservedLayerMap.keys());
+        let commonLayerIdsInBaseOrder = baseLayerIds.reduce((map, b) => {
+            let n = nextLayerMap.get(b);
+            if (n !== undefined) {
+                map.set(b, n);
+            }
+            return map;
+        }, new Map());
 
-        if (typeof(layerOrdering) !== undefined) {
-            // Call user provided delegate. User is responsible for splicing preservedLayerIds into nextLayerIds.
+        if (typeof (layerOrdering) === "function") {
             layerOrdering(nextLayerIds, preservedLayerIds);
             // TODO: Do some checks to make sure user didn't insert invalid layerIds into nextLayerIds. 
 
             // If preservedLayers and nextLayers contain the same layerId, use preservedLayer.
             next.layers = nextLayerIds.map(key => preservedLayerMap.has(key) ? preservedLayerMap.get(key)[0] : nextLayerMap.get(key)[0]);
-        } else if (preservedLayerIds.length() > 0) {
-            if (baseLayerIds.keys().filter(k => unorderedNextLayerIds.hasOwnProperty(k)).length() == 0) {
+        } else if (preservedLayerIds.length > 0) {
+            if (commonLayerIdsInBaseOrder.size == 0) {
                 // Shortcut for worst-case path where base and next are disjoint.
-                var unorderedNextLayerIds = nextLayerIds.reduce((map, obj) => {map[obj] = obj; return map;}, {});
                 next.layers.push(layers);
             } else {
                 // Splice preservedLayers into nextLayers
@@ -1075,13 +1080,6 @@ class Style extends Evented {
                 //       the layers from next that are above the preserved layer in the base order.
                 //     * If next has no layersIds in common with base, all preservedLayers are added on top of next.
                 //     * If preservedLayer and nextlayer IDs conflict, use preservedLayer.
-                let commonLayerIdsInBaseOrder = baseLayerIds.reduce((map, b) => {
-                    let n = nextLayerMap.get(b);
-                    if (n !== undefined) {
-                        map.set(b, n);
-                    }
-                    return map;
-                }, new Map());
                 let below = new Map();
                 let above = new Map()
                 let pivotIterator = commonLayerIdsInBaseOrder.entries();
@@ -1090,41 +1088,36 @@ class Style extends Evented {
 
                 baseLayerIds.forEach((baseLayerId) => {
                     if (baseLayerId == preservedLayerIds[0]) {
-                        // Place this layer into next
-                        if (baseLayerId == pivot[0]) {
-                            // Next already has this layer ID, override it.
+                        if (!pivot.done && baseLayerId == pivot.value[0]) {
                             nextLayerMap.set(baseLayerId, preservedLayerMap.get(baseLayerId));
-                        } else if (pivot == commonLayerIdsInBaseOrder[0]) {
-                            // Nothing below this layer in base exists in next.
-                            // Insert preserved layer below pivot
-                            below.set(pivot[1][1], preservedLayerMap.get(baseLayerId)[0]);
+                        } else if (!pivot.done && pivot.value[0] == commonLayerIdsInBaseOrder[0]) {
+                            below.set(pivot.value[0], preservedLayerMap.get(baseLayerId));
                         } else {
-                            // Insert preserved layer above last pivot
-                            above.set(lastPivot[1][1], preservedLayerMap.get(baseLayerId)[0]);
+                            above.set(lastPivot.value[0], preservedLayerMap.get(baseLayerId));
                         }
                     }
 
-                    if (baseLayerId == pivot[0]) {
+                    if (!pivot.done && baseLayerId == pivot.value[0]) {
                         lastPivot = pivot;
                         pivot = pivotIterator.next();
                     }
                 });
 
                 let belowIt = below.entries();
-                let b = below.next();
+                let b = belowIt.next();
                 let aboveIt = above.entries();
-                let a = above.next();
+                let a = aboveIt.next();
                 next.layers = [];
 
-                nextLayerMap.values().forEach((nextLayer) => {
-                    while (b[0] == nextLayer[0]) {
-                        next.layers.push(b[1]);
-                        b = below.next();
+                nextLayerMap.forEach((nextLayer, index) => {
+                    while (!b.done && b.value[0] == index) {
+                        next.layers.push(b.value[1]);
+                        b = belowIt.next();
                     }
-                    next.layers.push(nextLayer[1]);
-                    while (a[0] == nextLayer[0]) {
-                        next.layers.push(a[1]);
-                        a = after.next();
+                    next.layers.push(nextLayer);
+                    while (!a.done && a.value[0] == index) {
+                        next.layers.push(a.value[1]);
+                        a = aboveIt.next();
                     }
                 });
             }
