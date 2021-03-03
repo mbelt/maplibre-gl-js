@@ -1335,7 +1335,7 @@ class Map extends Camera {
      *
      * @see [Change a map's style](https://www.mapbox.com/mapbox-gl-js/example/setstyle/)
      */
-    setStyle(style: StyleSpecification | string | null, 
+    setStyle(style: StyleSpecification | string | null,
         options?: StyleSwapOptions | StyleOptions) {
         options = extend({}, {localIdeographFontFamily: this._localIdeographFontFamily}, options);
 
@@ -1391,7 +1391,7 @@ class Map extends Camera {
     }
 
     _diffStyle(style: StyleSpecification | string,
-        options?:  StyleSwapOptions | StyleOptions = {}) {
+        options?: StyleSwapOptions | StyleOptions = {}) {
         if (typeof style === 'string') {
             const url = this._requestManager.normalizeStyleURL(style);
             const request = this._requestManager.transformRequest(url, ResourceType.Style);

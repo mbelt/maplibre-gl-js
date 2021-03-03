@@ -2,7 +2,7 @@
 
 import assert from 'assert';
 
-import { Event, ErrorEvent, Evented } from '../util/evented';
+import {Event, ErrorEvent, Evented} from '../util/evented';
 import StyleLayer from './style_layer';
 import createStyleLayer from './create_style_layer';
 import loadSprite from './load_sprite';
@@ -10,25 +10,25 @@ import ImageManager from '../render/image_manager';
 import GlyphManager from '../render/glyph_manager';
 import Light from './light';
 import LineAtlas from '../render/line_atlas';
-import { pick, clone, extend, deepEqual, filterObject, mapObject } from '../util/util';
-import { getJSON, getReferrer, makeRequest, ResourceType } from '../util/ajax';
-import { isMapboxURL } from '../util/mapbox';
+import {pick, clone, extend, deepEqual, filterObject, mapObject} from '../util/util';
+import {getJSON, getReferrer, makeRequest, ResourceType} from '../util/ajax';
+import {isMapboxURL} from '../util/mapbox';
 import browser from '../util/browser';
 import Dispatcher from '../util/dispatcher';
-import { validateStyle, emitValidationErrors as _emitValidationErrors } from './validate_style';
+import {validateStyle, emitValidationErrors as _emitValidationErrors} from './validate_style';
 import {
     getType as getSourceType,
     setType as setSourceType,
     type SourceClass
 } from '../source/source';
-import { queryRenderedFeatures, queryRenderedSymbols, querySourceFeatures } from '../source/query_features';
+import {queryRenderedFeatures, queryRenderedSymbols, querySourceFeatures} from '../source/query_features';
 import SourceCache from '../source/source_cache';
 import GeoJSONSource from '../source/geojson_source';
 import styleSpec from '../style-spec/reference/latest';
 import getWorkerPool from '../util/global_worker_pool';
 import deref from '../style-spec/deref';
 import emptyStyle from '../style-spec/empty';
-import diffStyles, { operations as diffOperations } from '../style-spec/diff';
+import diffStyles, {operations as diffOperations} from '../style-spec/diff';
 import {
     registerForPluginStateChange,
     evented as rtlTextPluginEvented,
@@ -37,7 +37,7 @@ import {
 import PauseablePlacement from './pauseable_placement';
 import ZoomHistory from './zoom_history';
 import CrossTileSymbolIndex from '../symbol/cross_tile_symbol_index';
-import { validateCustomStyleLayer } from './style_layer/custom_style_layer';
+import {validateCustomStyleLayer} from './style_layer/custom_style_layer';
 
 // We're skipping validation errors with the `source.canvas` identifier in order
 // to continue to allow canvas sources to be added at runtime/updated in
@@ -47,14 +47,14 @@ const emitValidationErrors = (evented: Evented, errors: ?$ReadOnlyArray<{ messag
 
 import type Map from '../ui/map';
 import type Transform from '../geo/transform';
-import type { StyleImage } from './style_image';
-import type { StyleGlyph } from './style_glyph';
-import type { Callback } from '../types/callback';
+import type {StyleImage} from './style_image';
+import type {StyleGlyph} from './style_glyph';
+import type {Callback} from '../types/callback';
 import type EvaluationParameters from './evaluation_parameters';
-import type { Placement } from '../symbol/placement';
-import type { Cancelable } from '../types/cancelable';
-import type { RequestParameters, ResponseCallback } from '../util/ajax';
-import type { GeoJSON } from '@mapbox/geojson-types';
+import type {Placement} from '../symbol/placement';
+import type {Cancelable} from '../types/cancelable';
+import type {RequestParameters, ResponseCallback} from '../util/ajax';
+import type {GeoJSON} from '@mapbox/geojson-types';
 import type {
     LayerSpecification,
     FilterSpecification,
@@ -62,9 +62,9 @@ import type {
     LightSpecification,
     SourceSpecification
 } from '../style-spec/types';
-import type { CustomLayerInterface } from './style_layer/custom_style_layer';
-import type { Validator } from './validate_style';
-import type { OverscaledTileID } from '../source/tile_id';
+import type {CustomLayerInterface} from './style_layer/custom_style_layer';
+import type {Validator} from './validate_style';
+import type {OverscaledTileID} from '../source/tile_id';
 
 const supportedDiffOperations = pick(diffOperations, [
     'addLayer',
@@ -214,9 +214,9 @@ class Style extends Evented {
     }
 
     loadURL(url: string, options: StyleSwapOptions | StyleSetterOptions | { previousStyle: StyleSpecification } = {}) {
-        this.fire(new Event('dataloading', { dataType: 'style' }));
+        this.fire(new Event('dataloading', {dataType: 'style'}));
 
-        const validate = typeof options.validate === 'boolean' ?
+        options.validate = typeof options.validate === 'boolean' ?
             options.validate : !isMapboxURL(url);
 
         url = this.map._requestManager.normalizeStyleURL(url, options.accessToken);
@@ -232,7 +232,7 @@ class Style extends Evented {
     }
 
     loadJSON(json: StyleSpecification, options: StyleSetterOptions | StyleSwapOptions | { previousStyle: StyleSpecification } = {}) {
-        this.fire(new Event('dataloading', { dataType: 'style' }));
+        this.fire(new Event('dataloading', {dataType: 'style'}));
 
         this._request = browser.frame(() => {
             this._request = null;
@@ -242,7 +242,7 @@ class Style extends Evented {
     }
 
     loadEmpty() {
-        this.fire(new Event('dataloading', { dataType: 'style' }));
+        this.fire(new Event('dataloading', {dataType: 'style'}));
         this._load(empty, false);
     }
 
@@ -259,7 +259,7 @@ class Style extends Evented {
         this.stylesheet = json;
 
         for (const id in json.sources) {
-            this.addSource(id, json.sources[id], { validate: false });
+            this.addSource(id, json.sources[id], {validate: false});
         }
 
         if (json.sprite) {
@@ -278,7 +278,7 @@ class Style extends Evented {
         this._serializedLayers = {};
         for (let layer of layers) {
             layer = createStyleLayer(layer);
-            layer.setEventedParent(this, { layer: { id: layer.id } });
+            layer.setEventedParent(this, {layer:{id: layer.id}});
             this._layers[layer.id] = layer;
             this._serializedLayers[layer.id] = layer.serialize();
         }
@@ -286,7 +286,7 @@ class Style extends Evented {
 
         this.light = new Light(this.stylesheet.light);
 
-        this.fire(new Event('data', { dataType: 'style' }));
+        this.fire(new Event('data', {dataType: 'style'}));
         this.fire(new Event('style.load'));
     }
 
@@ -304,7 +304,7 @@ class Style extends Evented {
             this.imageManager.setLoaded(true);
             this._availableImages = this.imageManager.listImages();
             this.dispatcher.broadcast('setImages', this._availableImages);
-            this.fire(new Event('data', { dataType: 'style' }));
+            this.fire(new Event('data', {dataType: 'style'}));
         });
     }
 
@@ -441,7 +441,7 @@ class Style extends Evented {
         for (const sourceId in sourcesUsedBefore) {
             const sourceCache = this.sourceCaches[sourceId];
             if (sourcesUsedBefore[sourceId] !== sourceCache.used) {
-                sourceCache.fire(new Event('data', { sourceDataType: 'visibility', dataType: 'source', sourceId }));
+                sourceCache.fire(new Event('data', {sourceDataType: 'visibility', dataType: 'source', sourceId}));
             }
         }
 
@@ -449,7 +449,7 @@ class Style extends Evented {
         this.z = parameters.zoom;
 
         if (changed) {
-            this.fire(new Event('data', { dataType: 'style' }));
+            this.fire(new Event('data', {dataType: 'style'}));
         }
 
     }
@@ -566,7 +566,7 @@ class Style extends Evented {
         this._changedImages[id] = true;
         this._changed = true;
         this.dispatcher.broadcast('setImages', this._availableImages);
-        this.fire(new Event('data', { dataType: 'style' }));
+        this.fire(new Event('data', {dataType: 'style'}));
     }
 
     listImages() {
@@ -624,7 +624,7 @@ class Style extends Evented {
         const sourceCache = this.sourceCaches[id];
         delete this.sourceCaches[id];
         delete this._updatedSources[id];
-        sourceCache.fire(new Event('data', { sourceDataType: 'metadata', dataType: 'source', sourceId: id }));
+        sourceCache.fire(new Event('data', {sourceDataType: 'metadata', dataType: 'source', sourceId: id}));
         sourceCache.setEventedParent(null);
         sourceCache.clearTiles();
 
@@ -686,17 +686,17 @@ class Style extends Evented {
             if (typeof layerObject.source === 'object') {
                 this.addSource(id, layerObject.source);
                 layerObject = clone(layerObject);
-                layerObject = (extend(layerObject, { source: id }): any);
+                layerObject = (extend(layerObject, {source: id}): any);
             }
 
             // this layer is not in the style.layers array, so we pass an impossible array index
             if (this._validate(validateStyle.layer,
-                `layers.${id}`, layerObject, { arrayIndex: -1 }, options)) return;
+                `layers.${id}`, layerObject, {arrayIndex: -1}, options)) return;
 
             layer = createStyleLayer(layerObject);
             this._validateLayer(layer);
 
-            layer.setEventedParent(this, { layer: { id } });
+            layer.setEventedParent(this, {layer: {id}});
             this._serializedLayers[layer.id] = layer.serialize();
         }
 
@@ -1009,7 +1009,7 @@ class Style extends Evented {
     }
 
     getTransition() {
-        return extend({ duration: 300, delay: 0 }, this.stylesheet && this.stylesheet.transition);
+        return extend({duration: 300, delay: 0}, this.stylesheet && this.stylesheet.transition);
     }
 
     serialize() {
@@ -1032,27 +1032,27 @@ class Style extends Evented {
 
     _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification, next: StyleSpecification, options: StyleSwapOptions) {
         // Skip preserved sources and layers that don't exist in the base
-        let preservedSources = Object.keys(base.sources).filter((sourceId) => { return options.preserveSources.includes(sourceId) }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
-        let preservedLayers = base.layers.filter((layer) => { return options.preserveLayers.includes(layer.id); })
+        const preservedSources = Object.keys(base.sources).filter((sourceId) => { return options.preserveSources.includes(sourceId); }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
+        let preservedLayers = base.layers.filter((layer) => { return options.preserveLayers.includes(layer.id); });
 
         // Ignore layers that reference sources not in sources or next.sources.
         preservedLayers = preservedLayers.filter((layer) => next.sources.hasOwnProperty(layer.source) || preservedSources.hasOwnProperty(layer.source));
 
-        let nextLayerOrder = next.layers.map(l => l.id);
-        let preservedLayerOrder = preservedLayers.map(l => l.id);
-        let nextLayerIndex = next.layers.reduce((p, c) => { p[c.id] = c; return p; }, {});
-        let preservedLayerIndex = preservedLayers.reduce((p, c) => { p[c.id] = c; return p; }, {});
+        const nextLayerOrder = next.layers.map(l => l.id);
+        const preservedLayerOrder = preservedLayers.map(l => l.id);
+        const nextLayerIndex = next.layers.reduce((p, c) => { p[c.id] = c; return p; }, {});
+        const preservedLayerIndex = preservedLayers.reduce((p, c) => { p[c.id] = c; return p; }, {});
 
         if (typeof (options.layerOrdering) === "function") {
-            let userOrderedLayers = options.layerOrdering(base.layers.map(l => l.id), preservedLayerOrder, nextLayerOrder);
-            next.layers = userOrderedLayers.map(key => preservedLayers.find(l => l.id == key) ? preservedLayerIndex[key] : nextLayerIndex[key]);
-        } else if (preservedLayerIds.length > 0) {
+            const userOrderedLayers = options.layerOrdering(base.layers.map(l => l.id), preservedLayerOrder, nextLayerOrder);
+            next.layers = userOrderedLayers.map(key => preservedLayers.find(l => l.id === key) ? preservedLayerIndex[key] : nextLayerIndex[key]);
+        } else if (preservedLayerOrder.length > 0) {
             next.layers = next.layers.filter(l => !preservedLayerIndex.hasOwnProperty(l.id));
-            next.layers.push(layers);
+            next.layers.push(preservedLayers);
         }
 
         // Add sources to next
-        Object.assign(next.sources, next.sources, preservedSources);
+        preservedSources.keys().reduce((p, c) => { p[c] = preservedSources[c]; return p; }, next.sources);
         return next;
     }
 
