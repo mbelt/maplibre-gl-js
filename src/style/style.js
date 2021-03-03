@@ -104,7 +104,7 @@ export type StyleSwapOptions = {
     diff?: boolean,
     preserveLayers?: string[],
     preserveSources?: string[],
-    layerOrdering?: (nextLayerIds: string[], toInsert: string[]) => void
+    layerOrdering?: (currentLayerOrder: string[], toInsert: string[], nextLayerOrder: string[]) => string[]
 }
 /**
  * @private
@@ -213,7 +213,7 @@ class Style extends Evented {
         });
     }
 
-    loadURL(url: string, options: StyleSwapOptions | StyleSetterOptions = {}) {
+    loadURL(url: string, options: StyleSwapOptions | StyleSetterOptions | { previousStyle: StyleSpecification } = {}) {
         this.fire(new Event('dataloading', { dataType: 'style' }));
 
         const validate = typeof options.validate === 'boolean' ?
@@ -226,17 +226,18 @@ class Style extends Evented {
             if (error) {
                 this.fire(new ErrorEvent(error));
             } else if (json) {
-                this._load(json, validate, options.previousStyle, options.preserveLayers, options.preserveSources);
+                this._load(json, options);
             }
         });
     }
 
-    loadJSON(json: StyleSpecification, options: StyleSetterOptions | StyleSwapOptions = {}) {
+    loadJSON(json: StyleSpecification, options: StyleSetterOptions | StyleSwapOptions | { previousStyle: StyleSpecification } = {}) {
         this.fire(new Event('dataloading', { dataType: 'style' }));
 
         this._request = browser.frame(() => {
             this._request = null;
-            this._load(json, options.validate !== false, options.previousStyle, options.preserveLayers, options.preserveSources);
+            options.validate = options.validate !== false;
+            this._load(json, options);
         });
     }
 
@@ -245,13 +246,13 @@ class Style extends Evented {
         this._load(empty, false);
     }
 
-    _load(json: StyleSpecification, validate: boolean, prevJson?: StyleSpecification, preserveLayers?: [], preserveSources?: [], layerOrdering?: (nextLayerIds: string[]) => void) {
-        if (validate && emitValidationErrors(this, validateStyle(json))) {
+    _load(json: StyleSpecification, options: StyleSwapOptions | StyleSetterOptions | { previousStyle?: StyleSpecification }) {
+        if (options.validate && emitValidationErrors(this, validateStyle(json))) {
             return;
         }
 
-        if (typeof (prevJson) != "undefined" && Array.isArray(preserveLayers) && preserveLayers.length > 0) {
-            json = this._copyLayersAndSourcesFromBaseToNextStyle(prevJson, preserveSources, preserveLayers, layerOrdering, json);
+        if (typeof (options.previousStyle) != "undefined" && Array.isArray(options.preserveLayers) && typeof (options.preserveSources) != "undefined") {
+            json = this._copyLayersAndSourcesFromBaseToNextStyle(options.previousStyle, json, options);
         }
 
         this._loaded = true;
@@ -495,19 +496,16 @@ class Style extends Evented {
      * @returns {boolean} true if any changes were made; false otherwise
      * @private
      */
-    setState(nextState: StyleSpecification,
-        options: StyleSwapOptions = {}) {
+    setState(nextState: StyleSpecification, options: StyleSwapOptions = {}) {
         this._checkLoaded();
 
         if (emitValidationErrors(this, validateStyle(nextState))) return false;
 
-        if (typeof (options.previousState) != "undefined" && Array.isArray(options.preserveLayers) && options.preserveLayers.length > 0) {
+        if (typeof (options.previousStyle) != "undefined" && Array.isArray(options.preserveLayers) && options.preserveLayers.length > 0) {
             nextState = this._copyLayersAndSourcesFromBaseToNextStyle(
-                options.previousState,
-                options.preserveSources,
-                options.preserveLayers,
-                options.layerOrdering,
-                nextState);
+                this.serialize(),
+                nextState,
+                options);
         }
 
         nextState = clone(nextState);
@@ -1032,100 +1030,29 @@ class Style extends Evented {
         }, (value) => { return value !== undefined; });
     }
 
-    // TODO Simplify signature by using StyleDiffOptions here.
-    _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification,
-        preservedSourcesIds: String[],
-        preservedLayerIds: String[],
-        layerOrdering: (nextLayerIds: string[], toInsert: string[]) => void,
-        next: StyleSpecification) {
-        // Ignore sources and layers that don't exist in the base
-        // TODO: Better names of these local variables.
-        let sources = Object.keys(base.sources).filter((sourceId) => { return preservedSourcesIds.includes(sourceId); }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
-        let layers = base.layers.filter((layer) => { return preservedLayerIds.includes(layer.id); })
-        // Don't merge sources->next if base has a source with the same id.
-        sources = Object.keys(sources).filter((sourceId) => { return !next.sources.hasOwnProperty(sourceId); }).reduce((obj, key) => { obj[key] = sources[key]; return obj; }, {});
+    _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification, next: StyleSpecification, options: StyleSwapOptions) {
+        // Skip preserved sources and layers that don't exist in the base
+        let preservedSources = Object.keys(base.sources).filter((sourceId) => { return options.preserveSources.includes(sourceId) }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
+        let preservedLayers = base.layers.filter((layer) => { return options.preserveLayers.includes(layer.id); })
+
         // Ignore layers that reference sources not in sources or next.sources.
-        layers = layers.filter((layer) => next.sources.hasOwnProperty(layer.source) || sources.hasOwnProperty(layer.source));
+        preservedLayers = preservedLayers.filter((layer) => next.sources.hasOwnProperty(layer.source) || preservedSources.hasOwnProperty(layer.source));
 
-        let baseLayerMap = new Map(base.layers.map(layer => { return [layer.id, layer]; }));
-        let nextLayerMap = new Map(next.layers.map(layer => { return [layer.id, layer]; }));
-        let preservedLayerMap = new Map(layers.map(layer => [layer.id, layer]));
-        let baseLayerIds = Array.from(baseLayerMap.keys());
-        let nextLayerIds = Array.from(nextLayerMap.keys());
-        preservedLayerIds = Array.from(preservedLayerMap.keys());
-        let commonLayerIdsInBaseOrder = baseLayerIds.reduce((map, b) => {
-            let n = nextLayerMap.get(b);
-            if (n !== undefined) {
-                map.set(b, n);
-            }
-            return map;
-        }, new Map());
+        let nextLayerOrder = next.layers.map(l => l.id);
+        let preservedLayerOrder = preservedLayers.map(l => l.id);
+        let nextLayerIndex = next.layers.reduce((p, c) => { p[c.id] = c; return p; }, {});
+        let preservedLayerIndex = preservedLayers.reduce((p, c) => { p[c.id] = c; return p; }, {});
 
-        if (typeof (layerOrdering) === "function") {
-            layerOrdering(nextLayerIds, preservedLayerIds);
-            // TODO: Do some checks to make sure user didn't insert invalid layerIds into nextLayerIds. 
-
-            // If preservedLayers and nextLayers contain the same layerId, use preservedLayer.
-            next.layers = nextLayerIds.map(key => preservedLayerMap.has(key) ? preservedLayerMap.get(key)[0] : nextLayerMap.get(key)[0]);
+        if (typeof (options.layerOrdering) === "function") {
+            let userOrderedLayers = options.layerOrdering(base.layers.map(l => l.id), preservedLayerOrder, nextLayerOrder);
+            next.layers = userOrderedLayers.map(key => preservedLayers.find(l => l.id == key) ? preservedLayerIndex[key] : nextLayerIndex[key]);
         } else if (preservedLayerIds.length > 0) {
-            if (commonLayerIdsInBaseOrder.size == 0) {
-                // Shortcut for worst-case path where base and next are disjoint.
-                next.layers.push(layers);
-            } else {
-                // Splice preservedLayers into nextLayers
-                //   Rules:
-                //     * Splice each preserved layer directly above the layer in next with the same ID as the uppermost layer in the set of layers from base intersecting
-                //       the layers from next that are below the preserved layer in the base order.
-                //     * If no layerIds below the preserved layer exist in next, splice directly below lowermost layer in the set of layers from base intersecting
-                //       the layers from next that are above the preserved layer in the base order.
-                //     * If next has no layersIds in common with base, all preservedLayers are added on top of next.
-                //     * If preservedLayer and nextlayer IDs conflict, use preservedLayer.
-                let below = new Map();
-                let above = new Map()
-                let pivotIterator = commonLayerIdsInBaseOrder.entries();
-                let pivot = pivotIterator.next();
-                let lastPivot = null;
-
-                baseLayerIds.forEach((baseLayerId) => {
-                    if (baseLayerId == preservedLayerIds[0]) {
-                        if (!pivot.done && baseLayerId == pivot.value[0]) {
-                            nextLayerMap.set(baseLayerId, preservedLayerMap.get(baseLayerId));
-                        } else if (!pivot.done && pivot.value[0] == commonLayerIdsInBaseOrder[0]) {
-                            below.set(pivot.value[0], preservedLayerMap.get(baseLayerId));
-                        } else {
-                            above.set(lastPivot.value[0], preservedLayerMap.get(baseLayerId));
-                        }
-                    }
-
-                    if (!pivot.done && baseLayerId == pivot.value[0]) {
-                        lastPivot = pivot;
-                        pivot = pivotIterator.next();
-                    }
-                });
-
-                let belowIt = below.entries();
-                let b = belowIt.next();
-                let aboveIt = above.entries();
-                let a = aboveIt.next();
-                next.layers = [];
-
-                nextLayerMap.forEach((nextLayer, index) => {
-                    while (!b.done && b.value[0] == index) {
-                        next.layers.push(b.value[1]);
-                        b = belowIt.next();
-                    }
-                    next.layers.push(nextLayer);
-                    while (!a.done && a.value[0] == index) {
-                        next.layers.push(a.value[1]);
-                        a = aboveIt.next();
-                    }
-                });
-            }
+            next.layers = next.layers.filter(l => !preservedLayerIndex.hasOwnProperty(l.id));
+            next.layers.push(layers);
         }
 
         // Add sources to next
-        Object.assign(next.sources, next.sources, sources);
-
+        Object.assign(next.sources, next.sources, preservedSources);
         return next;
     }
 
