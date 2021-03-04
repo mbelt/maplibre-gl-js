@@ -213,7 +213,7 @@ class Style extends Evented {
         });
     }
 
-    loadURL(url: string, options: StyleSwapOptions | StyleSetterOptions | { previousStyle: StyleSpecification } = {}) {
+    loadURL(url: string, options: StyleSwapOptions & StyleSetterOptions & { previousStyle?: StyleSpecification, accessToken?: string } = {}) {
         this.fire(new Event('dataloading', {dataType: 'style'}));
 
         options.validate = typeof options.validate === 'boolean' ?
@@ -231,7 +231,7 @@ class Style extends Evented {
         });
     }
 
-    loadJSON(json: StyleSpecification, options: StyleSetterOptions | StyleSwapOptions | { previousStyle: StyleSpecification } = {}) {
+    loadJSON(json: StyleSpecification, options: StyleSetterOptions & StyleSwapOptions & { previousStyle?: StyleSpecification } = {}) {
         this.fire(new Event('dataloading', {dataType: 'style'}));
 
         this._request = browser.frame(() => {
@@ -243,10 +243,10 @@ class Style extends Evented {
 
     loadEmpty() {
         this.fire(new Event('dataloading', {dataType: 'style'}));
-        this._load(empty, false);
+        this._load(empty, {validate: false});
     }
 
-    _load(json: StyleSpecification, options: StyleSwapOptions | StyleSetterOptions | { previousStyle?: StyleSpecification }) {
+    _load(json: StyleSpecification, options: StyleSwapOptions & StyleSetterOptions & { previousStyle?: StyleSpecification }) {
         if (options.validate && emitValidationErrors(this, validateStyle(json))) {
             return;
         }
@@ -496,7 +496,7 @@ class Style extends Evented {
      * @returns {boolean} true if any changes were made; false otherwise
      * @private
      */
-    setState(nextState: StyleSpecification, options: StyleSwapOptions = {}) {
+    setState(nextState: StyleSpecification, options: StyleSwapOptions & {previousStyle?: StyleSpecification} = {}) {
         this._checkLoaded();
 
         if (emitValidationErrors(this, validateStyle(nextState))) return false;
@@ -1032,23 +1032,25 @@ class Style extends Evented {
 
     _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification, next: StyleSpecification, options: StyleSwapOptions) {
         // Skip preserved sources and layers that don't exist in the base
-        const preservedSources = Object.keys(base.sources).filter((sourceId) => { return options.preserveSources.includes(sourceId); }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
-        let preservedLayers = base.layers.filter((layer) => { return options.preserveLayers.includes(layer.id); });
+        const preservedSources = Object.keys(base.sources).filter((sourceId) => { return options.preserveSources ? options.preserveSources.includes(sourceId) : false; }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
+        let preservedLayers: LayerSpecification[] = base.layers.filter((layer) => { return options.preserveLayers ? options.preserveLayers.includes(layer.id) : false; });
 
         // Ignore layers that reference sources not in sources or next.sources.
-        preservedLayers = preservedLayers.filter((layer) => next.sources.hasOwnProperty(layer.source) || preservedSources.hasOwnProperty(layer.source));
+        preservedLayers = preservedLayers.filter((layer: LayerSpecification) => (layer.type === "background") || (next.sources.hasOwnProperty(layer.source) || preservedSources.hasOwnProperty(layer.source)));
 
         const nextLayerOrder = next.layers.map(l => l.id);
         const preservedLayerOrder = preservedLayers.map(l => l.id);
         const nextLayerIndex = next.layers.reduce((p, c) => { p[c.id] = c; return p; }, {});
         const preservedLayerIndex = preservedLayers.reduce((p, c) => { p[c.id] = c; return p; }, {});
 
-        if (typeof (options.layerOrdering) === "function") {
-            const userOrderedLayers = options.layerOrdering(base.layers.map(l => l.id), preservedLayerOrder, nextLayerOrder);
+        if (options.layerOrdering !== undefined) {
+            // eslint-disable-next-line no-unused-vars
+            const delegate = options.layerOrdering ? options.layerOrdering : function (_: string[], __: string[], ___: string[]) { throw new Error("layerOrdering delegate is null"); };
+            const userOrderedLayers = delegate(base.layers.map(l => l.id), preservedLayerOrder, nextLayerOrder);
             next.layers = userOrderedLayers.map(key => preservedLayers.find(l => l.id === key) ? preservedLayerIndex[key] : nextLayerIndex[key]);
         } else if (preservedLayerOrder.length > 0) {
             next.layers = next.layers.filter(l => !preservedLayerIndex.hasOwnProperty(l.id));
-            next.layers.push(preservedLayers);
+            next.layers.push.apply(preservedLayers);
         }
 
         // Add sources to next

@@ -1336,7 +1336,7 @@ class Map extends Camera {
      * @see [Change a map's style](https://www.mapbox.com/mapbox-gl-js/example/setstyle/)
      */
     setStyle(style: StyleSpecification | string | null,
-        options?: StyleSwapOptions | StyleOptions) {
+        options?: StyleSwapOptions & StyleOptions) {
         options = extend({}, {localIdeographFontFamily: this._localIdeographFontFamily}, options);
 
         if ((options.diff !== false && options.localIdeographFontFamily === this._localIdeographFontFamily) && this.style && style) {
@@ -1357,7 +1357,7 @@ class Map extends Camera {
         return str;
     }
 
-    _updateStyle(style: StyleSpecification | string | null,  options?: StyleSwapOptions | StyleOptions) {
+    _updateStyle(style: StyleSpecification | string | null,  options?: StyleSwapOptions & StyleOptions & {previousStyle?: StyleSpecification, accessToken?: string} = {}) {
         if (this.style) {
             options.previousStyle = this.style.serialize();
             this.style.setEventedParent(null);
@@ -1368,7 +1368,7 @@ class Map extends Camera {
             delete this.style;
             return this;
         } else {
-            this.style = new Style(this, options || {});
+            this.style = new Style(this, options);
         }
 
         this.style.setEventedParent(this, {style: this.style});
@@ -1391,7 +1391,7 @@ class Map extends Camera {
     }
 
     _diffStyle(style: StyleSpecification | string,
-        options?: StyleSwapOptions | StyleOptions = {}) {
+        options?: StyleSwapOptions & StyleOptions  & {previousStyle?: StyleSpecification, accessToken?: string} = {}) {
         if (typeof style === 'string') {
             const url = this._requestManager.normalizeStyleURL(style);
             const request = this._requestManager.transformRequest(url, ResourceType.Style);
@@ -1407,7 +1407,7 @@ class Map extends Camera {
         }
     }
 
-    _updateDiff(style: StyleSpecification, options?: StyleSwapOptions | StyleOptions = {}) {
+    _updateDiff(style: StyleSpecification, options?: StyleSwapOptions & StyleOptions & {previousStyle?: StyleSpecification, accessToken?: string} = {}) {
         try {
             if (this.style.setState(style, options)) {
                 this._update(true);
