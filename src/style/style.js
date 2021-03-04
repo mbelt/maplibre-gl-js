@@ -213,7 +213,7 @@ class Style extends Evented {
         });
     }
 
-    loadURL(url: string, options: StyleSwapOptions & StyleSetterOptions & { previousStyle?: StyleSpecification, accessToken?: string } = {}) {
+    loadURL(url: string, options: StyleSwapOptions & StyleSetterOptions & { accessToken?: string } = {}) {
         this.fire(new Event('dataloading', {dataType: 'style'}));
 
         options.validate = typeof options.validate === 'boolean' ?
@@ -231,7 +231,7 @@ class Style extends Evented {
         });
     }
 
-    loadJSON(json: StyleSpecification, options: StyleSetterOptions & StyleSwapOptions & { previousStyle?: StyleSpecification } = {}) {
+    loadJSON(json: StyleSpecification, options: StyleSetterOptions & StyleSwapOptions = {}) {
         this.fire(new Event('dataloading', {dataType: 'style'}));
 
         this._request = browser.frame(() => {
@@ -246,13 +246,13 @@ class Style extends Evented {
         this._load(empty, {validate: false});
     }
 
-    _load(json: StyleSpecification, options: StyleSwapOptions & StyleSetterOptions & { previousStyle?: StyleSpecification }) {
+    _load(json: StyleSpecification, options: StyleSwapOptions & StyleSetterOptions) {
         if (options.validate && emitValidationErrors(this, validateStyle(json))) {
             return;
         }
 
-        if (typeof (options.previousStyle) != "undefined" && Array.isArray(options.preserveLayers) && typeof (options.preserveSources) != "undefined") {
-            json = this._copyLayersAndSourcesFromBaseToNextStyle(options.previousStyle, json, options);
+        if (options.preserveLayers|| options.preserveSources) {
+            json = this._copyLayersAndSourcesFromBaseToNextStyle(this.serialize(), json, options);
         }
 
         this._loaded = true;
@@ -388,7 +388,7 @@ class Style extends Evented {
      * @private
      */
     update(parameters: EvaluationParameters) {
-        if (!this._loaded) {
+        if (!this.loaded) {
             return;
         }
 
@@ -496,12 +496,12 @@ class Style extends Evented {
      * @returns {boolean} true if any changes were made; false otherwise
      * @private
      */
-    setState(nextState: StyleSpecification, options: StyleSwapOptions & {previousStyle?: StyleSpecification} = {}) {
+    setState(nextState: StyleSpecification, options: StyleSwapOptions = {}) {
         this._checkLoaded();
 
         if (emitValidationErrors(this, validateStyle(nextState))) return false;
 
-        if (typeof (options.previousStyle) != "undefined" && Array.isArray(options.preserveLayers) && options.preserveLayers.length > 0) {
+        if (options.preserveLayers|| options.preserveSources) {
             nextState = this._copyLayersAndSourcesFromBaseToNextStyle(
                 this.serialize(),
                 nextState,
@@ -1012,7 +1012,7 @@ class Style extends Evented {
         return extend({duration: 300, delay: 0}, this.stylesheet && this.stylesheet.transition);
     }
 
-    serialize() {
+    serialize(): StyleSpecification {
         if (this._loaded) {
             return filterObject({
                 version: this.stylesheet.version,
@@ -1030,7 +1030,7 @@ class Style extends Evented {
                 layers: this._serializeLayers(this._order)
             }, (value) => { return value !== undefined; });
         } else {
-            return undefined;
+            return empty;
         }
     }
 

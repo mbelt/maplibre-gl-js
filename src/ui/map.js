@@ -57,6 +57,7 @@ import type {
     LightSpecification,
     SourceSpecification
 } from '../style-spec/types';
+import emptyStyle from '../style-spec/empty';
 
 type ControlPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 /* eslint-disable no-use-before-define */
@@ -1357,21 +1358,26 @@ class Map extends Camera {
         return str;
     }
 
-    _updateStyle(style: StyleSpecification | string | null,  options?: StyleSwapOptions & StyleOptions & {previousStyle?: StyleSpecification, accessToken?: string} = {}) {
-        if (this.style) {
-            options.previousStyle = this.style.serialize();
-            this.style.setEventedParent(null);
-            this.style._remove();
-        }
+    _updateStyle(style: StyleSpecification | string | null,  options?: StyleSwapOptions & StyleOptions & {accessToken?: string} = {}) {
+        if (!(options.preserveLayers || options.preserveSources)) {
+            if (this.style) {
+                this.style.setEventedParent(null);
+                this.style._remove();
+            }
 
-        if (!style) {
-            delete this.style;
-            return this;
+            if (!style) {
+                delete this.style;
+                return this;
+            } else {
+                this.style = new Style(this, options);
+            }
+
+            this.style.setEventedParent(this, {style: this.style});
         } else {
-            this.style = new Style(this, options);
+            if (!style) {
+                style = emptyStyle();
+            }
         }
-
-        this.style.setEventedParent(this, {style: this.style});
 
         if (typeof style === 'string') {
             this.style.loadURL(style, options);
@@ -1391,7 +1397,7 @@ class Map extends Camera {
     }
 
     _diffStyle(style: StyleSpecification | string,
-        options?: StyleSwapOptions & StyleOptions  & {previousStyle?: StyleSpecification, accessToken?: string} = {}) {
+        options?: StyleSwapOptions & StyleOptions  & {accessToken?: string} = {}) {
         if (typeof style === 'string') {
             const url = this._requestManager.normalizeStyleURL(style);
             const request = this._requestManager.transformRequest(url, ResourceType.Style);
@@ -1407,7 +1413,7 @@ class Map extends Camera {
         }
     }
 
-    _updateDiff(style: StyleSpecification, options?: StyleSwapOptions & StyleOptions & {previousStyle?: StyleSpecification, accessToken?: string} = {}) {
+    _updateDiff(style: StyleSpecification, options?: StyleSwapOptions & StyleOptions & {accessToken?: string} = {}) {
         try {
             if (this.style.setState(style, options)) {
                 this._update(true);
