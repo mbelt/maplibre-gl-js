@@ -1013,21 +1013,25 @@ class Style extends Evented {
     }
 
     serialize() {
-        return filterObject({
-            version: this.stylesheet.version,
-            name: this.stylesheet.name,
-            metadata: this.stylesheet.metadata,
-            light: this.stylesheet.light,
-            center: this.stylesheet.center,
-            zoom: this.stylesheet.zoom,
-            bearing: this.stylesheet.bearing,
-            pitch: this.stylesheet.pitch,
-            sprite: this.stylesheet.sprite,
-            glyphs: this.stylesheet.glyphs,
-            transition: this.stylesheet.transition,
-            sources: mapObject(this.sourceCaches, (source) => source.serialize()),
-            layers: this._serializeLayers(this._order)
-        }, (value) => { return value !== undefined; });
+        if (this._loaded) {
+            return filterObject({
+                version: this.stylesheet.version,
+                name: this.stylesheet.name,
+                metadata: this.stylesheet.metadata,
+                light: this.stylesheet.light,
+                center: this.stylesheet.center,
+                zoom: this.stylesheet.zoom,
+                bearing: this.stylesheet.bearing,
+                pitch: this.stylesheet.pitch,
+                sprite: this.stylesheet.sprite,
+                glyphs: this.stylesheet.glyphs,
+                transition: this.stylesheet.transition,
+                sources: mapObject(this.sourceCaches, (source) => source.serialize()),
+                layers: this._serializeLayers(this._order)
+            }, (value) => { return value !== undefined; });
+        } else {
+            return undefined;
+        }
     }
 
     _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification, next: StyleSpecification, options: StyleSwapOptions) {
