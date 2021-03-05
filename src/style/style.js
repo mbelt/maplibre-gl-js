@@ -10,7 +10,7 @@ import ImageManager from '../render/image_manager';
 import GlyphManager from '../render/glyph_manager';
 import Light from './light';
 import LineAtlas from '../render/line_atlas';
-import {pick, clone, extend, deepEqual, filterObject, mapObject} from '../util/util';
+import {pick, clone, warnOnce, extend, deepEqual, filterObject, mapObject} from '../util/util';
 import {getJSON, getReferrer, makeRequest, ResourceType} from '../util/ajax';
 import {isMapboxURL} from '../util/mapbox';
 import browser from '../util/browser';
@@ -251,8 +251,9 @@ class Style extends Evented {
             return;
         }
 
-        if (options.preserveLayers|| options.preserveSources) {
+        if (options.preserveLayers || options.preserveSources) {
             json = this._copyLayersAndSourcesFromBaseToNextStyle(this.serialize(), json, options);
+            this.sourceCaches = {};
         }
 
         this._loaded = true;
@@ -501,7 +502,7 @@ class Style extends Evented {
 
         if (emitValidationErrors(this, validateStyle(nextState))) return false;
 
-        if (options.preserveLayers|| options.preserveSources) {
+        if (options.preserveLayers || options.preserveSources) {
             nextState = this._copyLayersAndSourcesFromBaseToNextStyle(
                 this.serialize(),
                 nextState,
@@ -1036,11 +1037,40 @@ class Style extends Evented {
 
     _copyLayersAndSourcesFromBaseToNextStyle(base: StyleSpecification, next: StyleSpecification, options: StyleSwapOptions) {
         // Skip preserved sources and layers that don't exist in the base
-        const preservedSources = Object.keys(base.sources).filter((sourceId) => { return options.preserveSources ? options.preserveSources.includes(sourceId) : false; }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {});
-        let preservedLayers: LayerSpecification[] = base.layers.filter((layer) => { return options.preserveLayers ? options.preserveLayers.includes(layer.id) : false; });
+        const preservedSources = options.preserveSources ? options.preserveSources.filter((sourceId) => {
+            if (base.sources.hasOwnProperty(sourceId)) {
+                if (next.sources.hasOwnProperty(sourceId)) {
+                    if (!deepEqual(base.sources[sourceId], next.sources[sourceId])) {
+                        warnOnce(`Cannot preserve source \'${sourceId}\' that conflicts with source in next style.`);
+                    }
+                    return false;
+                }
+                return true;
+            } else {
+                warnOnce(`Cannot preserve source \'${sourceId}\' that does not exist.`);
+                return false;
+            }
+        }).reduce((obj, key) => { obj[key] = base.sources[key]; return obj; }, {}) : {};
+
+        const baseLayerIndex = base.layers.reduce((p, c) => { p[c.id] = c; return p; }, {});
+        let preservedLayers: LayerSpecification[] = options.preserveLayers ? options.preserveLayers.reduce((layers, id) => {
+            if (baseLayerIndex.hasOwnProperty(id)) {
+                layers.push(baseLayerIndex[id]);
+            } else {
+                warnOnce(`Cannot preserve layer \'${id}\' that does not exist.`);
+            }
+            return layers;
+        }, []) : [];
 
         // Ignore layers that reference sources not in sources or next.sources.
-        preservedLayers = preservedLayers.filter((layer: LayerSpecification) => (layer.type === "background") || (next.sources.hasOwnProperty(layer.source) || preservedSources.hasOwnProperty(layer.source)));
+        preservedLayers = preservedLayers.filter((layer: LayerSpecification) => {
+            if ((layer.type === "background") || (next.sources.hasOwnProperty(layer.source) || preservedSources.hasOwnProperty(layer.source))) {
+                return true;
+            } else {
+                warnOnce(`Cannot preserve layer \'${layer.id}\' without preserving its source \'${layer.source}\'.`);
+                return false;
+            }
+        });
 
         const nextLayerOrder = next.layers.map(l => l.id);
         const preservedLayerOrder = preservedLayers.map(l => l.id);
@@ -1051,14 +1081,24 @@ class Style extends Evented {
             // eslint-disable-next-line no-unused-vars
             const delegate = options.layerOrdering ? options.layerOrdering : function (_: string[], __: string[], ___: string[]) { throw new Error("layerOrdering delegate is null"); };
             const userOrderedLayers = delegate(base.layers.map(l => l.id), preservedLayerOrder, nextLayerOrder);
-            next.layers = userOrderedLayers.map(key => preservedLayers.find(l => l.id === key) ? preservedLayerIndex[key] : nextLayerIndex[key]);
+            next.layers = userOrderedLayers.reduce((layers, key) => {
+                if (preservedLayerIndex.hasOwnProperty(key)) {
+                    layers.push(preservedLayerIndex[key]);
+                } else if (nextLayerIndex.hasOwnProperty(key)) {
+                    layers.push(nextLayerIndex[key]);
+                } else {
+                    warnOnce(`layerOrdering returned unexpected id \'${key}\'.`);
+                }
+
+                return layers;
+            }, []);
         } else if (preservedLayerOrder.length > 0) {
             next.layers = next.layers.filter(l => !preservedLayerIndex.hasOwnProperty(l.id));
-            next.layers.push.apply(preservedLayers);
+            next.layers = next.layers.concat(preservedLayers);
         }
 
         // Add sources to next
-        preservedSources.keys().reduce((p, c) => { p[c] = preservedSources[c]; return p; }, next.sources);
+        Object.keys(preservedSources).reduce((p, c) => { p[c] = preservedSources[c]; return p; }, next.sources);
         return next;
     }
 
