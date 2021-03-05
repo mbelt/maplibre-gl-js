@@ -438,6 +438,277 @@ test('Style#_remove', (t) => {
     t.end();
 });
 
+test('Style#_copyLayersAndSourcesFromBaseToNextStyle', (t) => {
+    t.test('copy preserved layers', (t) => {
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON({
+            "version": 8,
+            "sources": {
+                "foo": {
+                    "type": "vector"
+                }
+            },
+            "layers": [
+                {
+                "id": "initial_0",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "fill"
+            },
+                {
+                "id": "initial_1",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "fill"
+            },
+                {
+                "id": "initial_2",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "fill"
+            }]});
+        const next = createStyleJSON({
+            "version": 8,
+            "sources": {
+                "bar": {
+                    "type": "vector"
+                }
+            },
+            "layers": [
+                {
+                "id": "next_0",
+                "source": "bar",
+                "source-layer": "source-layer",
+                "type": "fill"
+            }]});
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(next, {preserveLayers: ['initial_0', 'initial_1'], preserveSources: ['foo']});
+            } else {
+                const result = style.serialize();
+                const layers = result.layers.reduce((p, c) => { p[c.id] = c; return p; }, {});
+                t.ok(result.sources.hasOwnProperty("foo"));
+                t.ok(result.sources.hasOwnProperty("bar"));
+                t.ok(layers.hasOwnProperty("initial_0"));
+                t.ok(layers.hasOwnProperty("initial_1"));
+                t.ok(layers.hasOwnProperty("next_0"));
+                t.end();
+            }
+        });
+    });
+
+    t.test('preserved layer missing from base warns once', (t) => {
+        t.stub(console, 'warn');
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON();
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(initial, {preserveLayers: ['does not exist']});
+            } else {
+                t.ok(console.warn.calledOnce);
+                t.ok(console.warn.calledWith('Cannot preserve layer \'does not exist\' that does not exist.'));
+                t.end();
+            }
+        });
+    });
+
+    t.test('preserved source missing from base warns once', (t) => {
+        t.stub(console, 'warn');
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON();
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(initial, {preserveSources: ['does not exist']});
+            } else {
+                t.ok(console.warn.calledOnce);
+                t.ok(console.warn.calledWith('Cannot preserve source \'does not exist\' that does not exist.'));
+                t.end();
+            }
+        });
+    });
+
+    t.test('source id collision with mismatching props warns once', (t) => {
+        t.stub(console, 'warn');
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON({'sources': {'test': {'type': 'vector'}}});
+        const next = createStyleJSON({'sources': {'test': {'type': 'raster'}}});
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(next, {preserveSources: ['test']});
+            } else {
+                t.ok(console.warn.calledOnce);
+                t.ok(console.warn.calledWith('Cannot preserve source \'test\' that conflicts with source in next style.'));
+                t.end();
+            }
+        });
+    });
+
+    t.test('layer id collision selects preserved layer', (t) => {
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON({
+            "sources": {
+                "foo": {"type": "vector"}
+            },
+            "layers": [{
+                "id": "test",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "line"
+            }]
+        });
+        const next = createStyleJSON({
+            "sources": {
+                "foo": {"type": "vector"}
+            },
+            "layers": [{
+                "id": "test",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "fill"
+            }]
+        });
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(next, {preserveLayers: ['test']});
+            } else {
+                t.ok(style.getLayer('test').type === "line");
+                t.end();
+            }
+        });
+    });
+
+    t.test('preserved layer missing source warns once', (t) => {
+        t.stub(console, 'warn');
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON({
+            "sources": {
+                "foo": {"type": "vector"}
+            },
+            "layers": [{
+                "id": "test",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "line"
+            }]
+        });
+        const next = createStyleJSON();
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(next, {preserveLayers: ['test']});
+            } else {
+                t.ok(console.warn.calledOnce);
+                t.ok(console.warn.calledWith('Cannot preserve layer \'test\' without preserving its source \'foo\'.'));
+                t.end();
+            }
+        });
+    });
+
+    t.test('layer ordering delegate with no preserved layers/sources ', (t) => {
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON();
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(initial, {layerOrdering: (a, b, c) => { return c; }});
+            } else {
+                t.end();
+            }
+        });
+    });
+
+    t.test('layer ordering delegate inventing new layer warns once', (t) => {
+        t.stub(console, 'warn');
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON({
+            "sources": {
+                "foo": {"type": "vector"}
+            },
+            "layers": [{
+                "id": "layer0",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "line"
+            }]
+        });
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(initial, {
+                    // eslint-disable-next-line no-unused-vars
+                    layerOrdering: (a, b, c) => { return ['does not exist']; },
+                    preserveLayers: ["layer0"]
+                });
+            } else {
+                t.ok(console.warn.calledOnce);
+                t.ok(console.warn.calledWith('layerOrdering returned unexpected id \'does not exist\'.'));
+                t.end();
+            }
+        });
+    });
+
+    t.test('copy into empty next style', (t) => {
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON({
+            "sources": {
+                "foo": {"type": "vector"}
+            },
+            "layers": [{
+                "id": "layer0",
+                "source": "foo",
+                "source-layer": "source-layer",
+                "type": "line"
+            }]
+        });
+        const next = createStyleJSON();
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.loadJSON(next, {
+                    preserveLayers: ["layer0"],
+                    preserveSources: ["foo"]
+                });
+            } else {
+                t.ok(style.getLayer('layer0'));
+                t.end();
+            }
+        });
+    });
+    t.end();
+});
+
 test('Style#update', (t) => {
     const style = new Style(new StubMap());
     style.loadJSON({
