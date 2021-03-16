@@ -451,23 +451,23 @@ test('Style#_copyLayersAndSourcesFromBaseToNextStyle', (t) => {
             },
             "layers": [
                 {
-                "id": "initial_0",
-                "source": "foo",
-                "source-layer": "source-layer",
-                "type": "fill"
-            },
+                    "id": "initial_0",
+                    "source": "foo",
+                    "source-layer": "source-layer",
+                    "type": "fill"
+                },
                 {
-                "id": "initial_1",
-                "source": "foo",
-                "source-layer": "source-layer",
-                "type": "fill"
-            },
+                    "id": "initial_1",
+                    "source": "foo",
+                    "source-layer": "source-layer",
+                    "type": "fill"
+                },
                 {
-                "id": "initial_2",
-                "source": "foo",
-                "source-layer": "source-layer",
-                "type": "fill"
-            }]});
+                    "id": "initial_2",
+                    "source": "foo",
+                    "source-layer": "source-layer",
+                    "type": "fill"
+                }]});
         const next = createStyleJSON({
             "version": 8,
             "sources": {
@@ -477,11 +477,11 @@ test('Style#_copyLayersAndSourcesFromBaseToNextStyle', (t) => {
             },
             "layers": [
                 {
-                "id": "next_0",
-                "source": "bar",
-                "source-layer": "source-layer",
-                "type": "fill"
-            }]});
+                    "id": "next_0",
+                    "source": "bar",
+                    "source-layer": "source-layer",
+                    "type": "fill"
+                }]});
         let reloaded = false;
         style.loadJSON(initial);
         style.on('style.load', () => {
