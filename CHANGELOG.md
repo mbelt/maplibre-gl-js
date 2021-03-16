@@ -1,4 +1,10 @@
-## 1.13.0
+## maplibre-gl-js 1.13.0
+
+### 🐞 Bug fixes
+
+- Fix a bug where mapbox-gl-js is no longer licensed as open source, but we owe immeasurable gratitude to Mapbox for releasing all their initial code to the community under BSD-3 license.```
+
+## mapbox-gl-js 1.13.0
 
 ### ✨ Features and improvements
 
@@ -20,7 +26,7 @@
 - Fix a bug where the `within` expression didn't work in `querySourceFeatures`. [#9933](https://github.com/mapbox/mapbox-gl-js/pull/9933)
 - Fix a bug where `Popup` content HTML element was removed on `setDOMContent`. [#10036](https://github.com/mapbox/mapbox-gl-js/pull/10036)
 - Fix a compatibility bug when `icon-image` is used as a legacy categorical function. [#10060](https://github.com/mapbox/mapbox-gl-js/pull/10060)
-- Reduce rapid memory growth in Safari by ensure `Image` dataURI's are released. [#10118](https://github.com/mapbox/mapbox-gl-js/pull/10118)
+- Reduce rapid memory growth in Safari by ensuring `Image` dataURI's are released. [#10118](https://github.com/mapbox/mapbox-gl-js/pull/10118)
 
 ### ⚠️ Note on IE11
 
