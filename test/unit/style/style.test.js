@@ -496,12 +496,13 @@ test('Style#_copyLayersAndSourcesFromBaseToNextStyle', (t) => {
                 t.ok(layers.hasOwnProperty("initial_0"));
                 t.ok(layers.hasOwnProperty("initial_1"));
                 t.ok(layers.hasOwnProperty("next_0"));
+                t.notOk(layers.hasOwnProperty("initial_2"));
                 t.end();
             }
         });
     });
 
-    t.test('preserved layer missing from base warns once', (t) => {
+    t.test('preserved layer not in base warns once', (t) => {
         t.stub(console, 'warn');
         const map = new StubMap();
         const style = new Style(map);
@@ -706,6 +707,55 @@ test('Style#_copyLayersAndSourcesFromBaseToNextStyle', (t) => {
             }
         });
     });
+
+    t.test('preserve layer and set state', (t) => {
+        const map = new StubMap();
+        const style = new Style(map);
+        const initial = createStyleJSON({
+            "version": 8,
+            "sources": {
+                "foo": {
+                    "type": "vector"
+                }
+            },
+            "layers": [
+                {
+                    "id": "initial_0",
+                    "source": "foo",
+                    "source-layer": "source-layer",
+                    "type": "fill"
+                }]});
+        const next = createStyleJSON({
+            "version": 8,
+            "sources": {
+                "bar": {
+                    "type": "vector"
+                }
+            },
+            "layers": [
+                {
+                    "id": "next_0",
+                    "source": "bar",
+                    "source-layer": "source-layer",
+                    "type": "fill"
+                }]});
+        let reloaded = false;
+        style.loadJSON(initial);
+        style.on('style.load', () => {
+            if (!reloaded) {
+                reloaded = true;
+                style.setState(next, {
+                    preserveLayers: ["initial_0"],
+                    preserveSources: ["foo"],
+                    diff: true
+                });
+                t.ok(style.getLayer('initial_0'));
+                t.ok(style.getLayer('next_0'));
+                t.end();
+            }
+        });
+    });
+
     t.end();
 });
 
